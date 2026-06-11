@@ -10,6 +10,9 @@ import os
 import random
 import importlib.util
 from copy import deepcopy
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 ENGINE_DIR = os.path.join(BASE, "risk engine")
@@ -212,10 +215,6 @@ def compute_priority(scores):
     )
 
 
-def compute_recommendations(priority_list, umrs_result):
-    return _RecEngine.generate_fallback(priority_list, umrs_result)
-
-
 def compute_forecast(sat_key, state):
     profile = SATELLITES[sat_key]
     # Always project from initial profile state for consistent 24h view
@@ -335,6 +334,37 @@ def get_sat_summaries(state):
     return raw
 
 
+def _enrich_priority(sat_key, priority, state):
+    ss = state["satellites"][sat_key]
+    has_alerts = len(state["alerts"]) > 0
+    enriched = []
+    for item in priority:
+        c = item["component"]
+        ctx = {}
+        if c == "Collision Risk":
+            worst = max(ss["cdms"], key=lambda x: x["pc"]) if ss["cdms"] else None
+            ctx["collision_probability"] = worst["pc"] if worst else 0
+            ctx["minimum_range_m"] = worst["min_rng_m"] if worst else 0
+        elif c == "Spacecraft Health":
+            h = ss["health"]
+            ctx["battery_percentage"] = h["battery_percentage"]
+            ctx["eclipse_duration_min"] = h["eclipse_duration_minutes"]
+            ctx["payload_utilization"] = h["payload_utilization"]
+            ctx["solar_efficiency"] = h["solar_panel_efficiency"]
+            ctx["temperature_status"] = h["temperature_status"]
+        elif c == "Ground Segment":
+            obs, rate, st = _station_ground(sat_key, ss["stations"])
+            ctx["future_observations"] = obs
+            ctx["success_rate"] = rate
+            ctx["station_status"] = st
+            ctx["stations"] = dict(ss["stations"])
+        elif c == "Space Weather":
+            ctx["kp_index"] = state["kp_val"]
+            ctx["active_alerts"] = has_alerts
+        enriched.append({**item, "context": ctx})
+    return enriched
+
+
 def get_dashboard(sat_key, state):
     ss = state["satellites"][sat_key]
     scores = compute_scores(
@@ -343,8 +373,9 @@ def get_dashboard(sat_key, state):
         len(state["alerts"]) > 0,
     )
     priority = compute_priority(scores)
+    priority = _enrich_priority(sat_key, priority, state)
     umrs_result = {"umrs": scores["umrs"], "level": scores["level"]}
-    recs = compute_recommendations(priority, umrs_result)
+    recs = _RecEngine().generate(priority, umrs_result)
     forecast = compute_forecast(sat_key, state)
 
     summaries = get_sat_summaries(state)
