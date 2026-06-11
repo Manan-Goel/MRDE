@@ -1,0 +1,34 @@
+MRDE/
+├── .env
+├── AGENTS.md
+├── cli_dashboard.py
+├── directory_tree.txt
+├── engine.py
+├── requirements.txt
+├── data/
+│   ├── cdm_data.json
+│   ├── iss_tle.json
+│   ├── kp_index.json
+│   ├── noaa_alerts.json
+│   ├── satnogs/
+│   │   ├── all_stations.json
+│   │   └── online_stations.json
+│   └── spacecraft/
+│       └── spacecraft_health.json
+├── risk engine/
+│   ├── collision.py
+│   ├── ground_segment.py
+│   ├── priority engine.py
+│   ├── recommendation.py
+│   ├── spacecraft_health.py
+│   ├── umrs.py
+│   └── weather.py
+├── scripts/
+│   ├── SpaceCraftHealth_DataSynthesis.py
+│   ├── edaGroundStation.py
+│   ├── ftechGrounStations.py
+│   ├── satngo.py
+│   ├── test_login.py
+│   ├── test_satngos.py
+│   └── test_sources.py
+└── venv/ [contents omitted]
