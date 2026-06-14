@@ -30,11 +30,18 @@ export default function Header() {
         <span className={`flex items-center gap-1.5 rounded border px-2 py-0.5 ${kpClass}`}>
           <Activity size={12} /> Kp {state ? state.kp_val : '-'}
         </span>
-        {alertCount > 0 && (
-          <span className="flex items-center gap-1.5 rounded border border-risk-critical/40 bg-risk-critical/10 px-2 py-0.5 text-risk-critical">
-            <Bell size={12} /> {state?.alert_summary ?? alertCount}
-          </span>
-        )}
+        <button
+          onClick={() => navigate('/')}
+          className="relative flex items-center gap-1.5 rounded border border-line px-2 py-1 text-txt-secondary transition hover:border-accent-blue/50 hover:text-accent-blue"
+          title="View alerts"
+        >
+          <Bell size={13} />
+          {alertCount > 0 && (
+            <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-risk-critical px-1 text-[8px] font-bold text-white leading-none">
+              {alertCount}
+            </span>
+          )}
+        </button>
         <button
           onClick={() => void reset()}
           className="flex items-center gap-1.5 rounded border border-line px-2 py-1 text-txt-secondary transition hover:border-accent-blue/50 hover:text-accent-blue"

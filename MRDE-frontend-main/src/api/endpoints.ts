@@ -1,5 +1,6 @@
 import { api } from './client';
 import {
+  AlertsResponse,
   ForecastResponse,
   GlobalState,
   ResetResponse,
@@ -18,3 +19,8 @@ export const getSatellite = (key: string) =>
 
 export const getForecast = (key: string) =>
   api.get<ForecastResponse>(`/api/satellites/${key}/forecast`).then((r) => r.data);
+
+export const getAlerts = () => api.get<AlertsResponse>('/api/alerts').then((r) => r.data);
+
+export const resolveAlert = (alertId: number) =>
+  api.post(`/api/alerts/${alertId}/resolve`).then((r) => r.data);

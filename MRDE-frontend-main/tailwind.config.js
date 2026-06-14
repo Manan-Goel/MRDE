@@ -5,14 +5,14 @@ export default {
     extend: {
       colors: {
         bg: {
-          primary: '#0a0b0e',
-          secondary: '#111318',
-          tertiary: '#1a1d24',
+          primary: 'var(--color-bg-primary)',
+          secondary: 'var(--color-bg-secondary)',
+          tertiary: 'var(--color-bg-tertiary)',
         },
-        line: '#23262d',
+        line: 'var(--color-line)',
         txt: {
-          primary: '#e8eaed',
-          secondary: '#9aa0a6',
+          primary: 'var(--color-txt-primary)',
+          secondary: 'var(--color-txt-secondary)',
         },
         accent: {
           blue: '#4fc3f7',

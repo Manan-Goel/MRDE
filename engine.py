@@ -31,7 +31,7 @@ _SpaceWeather = _load("weather", os.path.join(ENGINE_DIR, "weather.py")).SpaceWe
 _GroundSegment = _load("ground", os.path.join(ENGINE_DIR, "ground_segment.py")).GroundSegmentRisk
 _HealthRisk = _load("health", os.path.join(ENGINE_DIR, "spacecraft_health.py")).SpacecraftHealthRisk
 _UMRS = _load("umrs", os.path.join(ENGINE_DIR, "umrs.py")).UMRS
-_PriorityEngine = _load("priority", os.path.join(ENGINE_DIR, "priority engine.py")).PriorityEngine
+_PriorityEngine = _load("priority", os.path.join(ENGINE_DIR, "priority_engine.py")).PriorityEngine
 _RecEngine = _load("recommend", os.path.join(ENGINE_DIR, "recommendation.py")).RecommendationEngine
 
 # ── Load data ──
@@ -110,6 +110,83 @@ SAT_KEYS = ["sat1", "sat2", "sat3"]
 ACCEL = 60
 TICK_S = 2.0
 SIM_MIN_PER_TICK = TICK_S * ACCEL / 60.0
+
+# ── Random scenarios for dynamic alerts ──
+
+def _generate_scenarios():
+    scenarios = []
+    for sat in ["sat1", "sat2", "sat3"]:
+        for pc in [0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, 0.25, 0.30, 0.35]:
+            for rng in [5, 10, 20, 30, 50, 80, 120, 200]:
+                scenarios.append({"type": "conjunction", "sat": sat, "pc": pc, "rng": float(rng)})
+        for pct in range(3, 25):
+            scenarios.append({"type": "battery_drop", "sat": sat, "pct": pct})
+        for level in ["Warning", "Critical"]:
+            scenarios.append({"type": "temp_spike", "sat": sat, "level": level})
+        for station in ["Svalbard", "Fairbanks", "Kourou", "Wallops", "Mauritius", "Santiago"]:
+            scenarios.append({"type": "station_offline", "sat": sat, "station": station})
+            scenarios.append({"type": "station_testing", "sat": sat, "station": station})
+            scenarios.append({"type": "station_recovery", "sat": sat, "station": station})
+        for eff in range(10, 90, 5):
+            scenarios.append({"type": "solar_dip", "sat": sat, "eff": eff})
+        for util in range(60, 100):
+            scenarios.append({"type": "payload_surge", "sat": sat, "util": util})
+        for bd in [-30, -25, -20, -15, -10]:
+            for ea in [10, 15, 20, 25, 30]:
+                scenarios.append({"type": "eclipse_start", "sat": sat, "battery_drop": bd, "eclipse_add": ea})
+    for kp in [5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0]:
+        scenarios.append({"type": "kp_storm", "sat": "all", "kp_set": kp})
+    return scenarios
+
+RANDOM_SCENARIOS: list[dict] = _generate_scenarios()
+
+def _apply_random_scenario(scenario, state):
+    sat_key = scenario["sat"]
+    desc = ""
+    if scenario["type"] == "conjunction":
+        ss = state["satellites"][sat_key]
+        ss["cdms"].append({"pc": scenario["pc"], "min_rng_m": scenario["rng"]})
+        desc = f"CDM alert: pc={scenario['pc']}, range={scenario['rng']}m"
+    elif scenario["type"] == "battery_drop":
+        ss = state["satellites"][sat_key]
+        ss["health"]["battery_percentage"] = scenario["pct"]
+        desc = f"Battery dropped to {scenario['pct']}%"
+    elif scenario["type"] == "temp_spike":
+        ss = state["satellites"][sat_key]
+        ss["health"]["temperature_status"] = scenario["level"]
+        desc = f"Temperature spiked to {scenario['level']}"
+    elif scenario["type"] == "station_offline":
+        ss = state["satellites"][sat_key]
+        if scenario["station"] in ss["stations"]:
+            ss["stations"][scenario["station"]] = "Offline"
+            desc = f"Station {scenario['station']} went offline"
+    elif scenario["type"] == "station_testing":
+        ss = state["satellites"][sat_key]
+        if scenario["station"] in ss["stations"]:
+            ss["stations"][scenario["station"]] = "Testing"
+            desc = f"Station {scenario['station']} in testing mode"
+    elif scenario["type"] == "station_recovery":
+        ss = state["satellites"][sat_key]
+        if scenario["station"] in ss["stations"]:
+            ss["stations"][scenario["station"]] = "Online"
+            desc = f"Station {scenario['station']} recovered to Online"
+    elif scenario["type"] == "eclipse_start":
+        ss = state["satellites"][sat_key]
+        ss["health"]["battery_percentage"] = max(0, ss["health"]["battery_percentage"] + scenario["battery_drop"])
+        ss["health"]["eclipse_duration_minutes"] += scenario["eclipse_add"]
+        desc = f"Eclipse: battery {scenario['battery_drop']}%, eclipse +{scenario['eclipse_add']}min"
+    elif scenario["type"] == "solar_dip":
+        ss = state["satellites"][sat_key]
+        ss["health"]["solar_panel_efficiency"] = scenario["eff"]
+        desc = f"Solar efficiency dropped to {scenario['eff']}"
+    elif scenario["type"] == "payload_surge":
+        ss = state["satellites"][sat_key]
+        ss["health"]["payload_utilization"] = scenario["util"]
+        desc = f"Payload utilization surged to {scenario['util']}%"
+    elif scenario["type"] == "kp_storm":
+        state["kp_val"] = scenario["kp_set"]
+        desc = f"Kp index surged to {scenario['kp_set']}"
+    return desc
 
 # ── Helpers ──
 
@@ -279,34 +356,18 @@ def get_sat_summaries(state):
     for k in SAT_KEYS:
         p = SATELLITES[k]
         ss = state["satellites"][k]
-        cdms = ss["cdms"]
-        if cdms:
-            worst = max(cdms, key=lambda c: c["pc"])
-            cr = _CollisionRisk.calculate(worst["pc"], worst["min_rng_m"])["score"]
-        else:
-            cr = 0.0
-        wr = _SpaceWeather.calculate(state["kp_val"], len(state["alerts"]) > 0)["score"]
-        obs, rate, st = _station_ground(k, ss["stations"])
-        gr = _GroundSegment.calculate(obs, rate, st)["score"]
-        hr = _HealthRisk.calculate(
-            ss["health"]["battery_percentage"],
-            ss["health"]["eclipse_duration_minutes"],
-            ss["health"]["payload_utilization"],
-            ss["health"]["solar_panel_efficiency"],
-            ss["health"]["temperature_status"],
-        )["score"]
-        umrs = _UMRS.calculate(cr, wr, gr, hr)
+        scores = compute_scores(k, state["kp_val"], ss["cdms"], ss["health"], ss["stations"], len(state["alerts"]) > 0)
         raw.append({
             "key": k,
             "name": p["name"],
             "label": p["label"],
             "desc": p["desc"],
-            "umrs": round(umrs["umrs"], 1),
-            "level": umrs["level"],
-            "collision": round(cr, 1),
-            "weather": round(wr, 1),
-            "ground": round(gr, 1),
-            "health": round(hr, 1),
+            "umrs": scores["umrs"],
+            "level": scores["level"],
+            "collision": scores["collision"],
+            "weather": scores["weather"],
+            "ground": scores["ground"],
+            "health": scores["health"],
         })
 
     # Compute priority rank: critical first, then UMRS descending
@@ -401,7 +462,126 @@ def get_dashboard(sat_key, state):
     }
 
 
-# ── Sim state management ──
+# ── Alert system ──
+
+_ALERT_SEQ = 0
+
+def _next_alert_id():
+    global _ALERT_SEQ
+    _ALERT_SEQ += 1
+    return _ALERT_SEQ
+
+def _gen_alerts(state):
+    """Generate timestamped alerts from current satellite states."""
+    resolved = state.get("resolved_alert_types", set())
+    alerts = []
+    for k in SAT_KEYS:
+        ss = state["satellites"][k]
+        p = SATELLITES[k]
+        clock = fmt_time(state["clock_min"])
+        for cdm in ss["cdms"]:
+            if cdm.get("pc", 0) > 0.01 and f"{k}:conjunction" not in resolved:
+                alerts.append({
+                    "id": _next_alert_id(),
+                    "sat_key": k,
+                    "sat_name": p["name"],
+                    "type": "conjunction",
+                    "message": f"CDM: pc={cdm['pc']:.3f}, range={cdm['min_rng_m']:.0f}m",
+                    "severity": "CRITICAL" if cdm["pc"] > 0.05 else "HIGH",
+                    "timestamp": clock,
+                    "clock_min": state["clock_min"],
+                    "resolved": False,
+                })
+        h = ss["health"]
+        if h["battery_percentage"] < 15 and f"{k}:battery" not in resolved:
+            alerts.append({
+                "id": _next_alert_id(),
+                "sat_key": k,
+                "sat_name": p["name"],
+                "type": "battery",
+                "message": f"Battery critical at {h['battery_percentage']}%",
+                "severity": "CRITICAL" if h["battery_percentage"] < 5 else "HIGH",
+                "timestamp": clock,
+                "clock_min": state["clock_min"],
+                "resolved": False,
+            })
+        if h["temperature_status"] == "Critical" and f"{k}:thermal" not in resolved:
+            alerts.append({
+                "id": _next_alert_id(),
+                "sat_key": k,
+                "sat_name": p["name"],
+                "type": "thermal",
+                "message": f"Temperature status: {h['temperature_status']}",
+                "severity": "CRITICAL",
+                "timestamp": clock,
+                "clock_min": state["clock_min"],
+                "resolved": False,
+            })
+        stations = ss.get("stations", {})
+        offline_stations = [s for s, st in stations.items() if st == "Offline"]
+        if offline_stations and f"{k}:ground" not in resolved:
+            alerts.append({
+                "id": _next_alert_id(),
+                "sat_key": k,
+                "sat_name": p["name"],
+                "type": "ground",
+                "message": f"Stations offline: {', '.join(offline_stations)}",
+                "severity": "HIGH",
+                "timestamp": clock,
+                "clock_min": state["clock_min"],
+                "resolved": False,
+            })
+        if state["kp_val"] >= 7 and f"{k}:space_weather" not in resolved:
+            alerts.append({
+                "id": _next_alert_id(),
+                "sat_key": k,
+                "sat_name": p["name"],
+                "type": "space_weather",
+                "message": f"Kp index elevated at {state['kp_val']}",
+                "severity": "HIGH",
+                "timestamp": clock,
+                "clock_min": state["clock_min"],
+                "resolved": False,
+            })
+    alerts.sort(key=lambda a: a["severity"] == "CRITICAL", reverse=True)
+    return alerts
+
+
+def _resolve_alert(state, alert_id):
+    resolved_key = None
+    suppress_event_types = set()
+    for a in state["alerts"]:
+        if a["id"] == alert_id:
+            a["resolved"] = True
+            resolved_key = f"{a['sat_key']}:{a['type']}"
+            sat_key = a["sat_key"]
+            ss = state["satellites"][sat_key]
+            a_type = a["type"]
+            # Fix underlying state immediately
+            if a_type == "conjunction":
+                ss["cdms"].clear()
+                suppress_event_types.update(["cdm"])
+            elif a_type == "battery":
+                ss["health"]["battery_percentage"] = 85
+                ss["health"]["eclipse_duration_minutes"] = 0
+                suppress_event_types.update(["battery_critical", "eclipse_start"])
+            elif a_type == "thermal":
+                ss["health"]["temperature_status"] = "Nominal"
+                suppress_event_types.update(["temp_spike"])
+            elif a_type == "ground":
+                for st_name in list(ss["stations"].keys()):
+                    ss["stations"][st_name] = "Online"
+                suppress_event_types.update(["station_status"])
+            elif a_type == "space_weather":
+                pass
+            # Suppress future scheduled events that would re-trigger the same condition
+            profile = SATELLITES[sat_key]
+            for idx, evt in enumerate(profile.get("events", [])):
+                if evt["type"] in suppress_event_types:
+                    ss["processed_events"].add(idx)
+    if resolved_key:
+        state.setdefault("resolved_alert_types", set()).add(resolved_key)
+    return state["alerts"]
 
 def default_state():
     state = {
@@ -410,6 +590,10 @@ def default_state():
         "kp_val": KP_CYCLE[3]["kp_index"],
         "alerts": [],
         "prev_priority_keys": [],
+        "resolved_alert_types": set(),
+        "tick_count": 0,
+        "next_scenario_tick": 5,
+        "used_scenarios": set(),
         "satellites": {},
     }
     for k in SAT_KEYS:
@@ -432,12 +616,16 @@ def default_state():
                 if evt["type"] == "station_status":
                     sat_state["recent_events"].append(f"Station {evt['station']} -> {evt['status']}")
         state["satellites"][k] = sat_state
+    state["alerts"] = _gen_alerts(state)
     return state
+
+# ── Sim state management ──
 
 
 def tick(state):
     state["clock_min"] += SIM_MIN_PER_TICK
     current_hour = int(state["clock_min"] / 60)
+    state["tick_count"] += 1
 
     for k in SAT_KEYS:
         p = SATELLITES[k]
@@ -454,7 +642,6 @@ def tick(state):
                         sat_state["recent_events"].append(f"h{current_hour} Station {evt['station']}: {evt['status']}")
                     else:
                         sat_state["recent_events"].append(f"h{current_hour} {lbl}")
-                    # Keep last 6 events
                     if len(sat_state["recent_events"]) > 6:
                         sat_state["recent_events"] = sat_state["recent_events"][-6:]
 
@@ -465,12 +652,30 @@ def tick(state):
             state["kp_idx"] = ni
             state["kp_val"] = KP_CYCLE[ni]["kp_index"]
 
-    if random.random() < 0.06 and ALERTS_DATA:
-        a = random.choice(ALERTS_DATA)
-        if a not in state["alerts"]:
-            state["alerts"].append(a)
-    if state["alerts"] and random.random() < 0.08:
-        state["alerts"].pop(0)
+    # Fire random scenario every 5-7 ticks
+    if state["tick_count"] >= state.get("next_scenario_tick", 5):
+        state["next_scenario_tick"] = state["tick_count"] + random.randint(5, 7)
+        SCENARIO_TO_ALERT = {"battery_drop": "battery", "station_offline": "ground", "station_testing": "ground", "station_recovery": "ground", "temp_spike": "thermal", "solar_dip": "health", "payload_surge": "health", "eclipse_start": "battery"}
+        resolved = state.get("resolved_alert_types", set())
+        available = [
+            s for i, s in enumerate(RANDOM_SCENARIOS)
+            if i not in state.get("used_scenarios", set())
+            and f"{s['sat']}:{SCENARIO_TO_ALERT.get(s['type'], s['type'])}" not in resolved
+        ]
+        if available:
+            chosen = random.choice(available)
+            idx = RANDOM_SCENARIOS.index(chosen)
+            state.setdefault("used_scenarios", set()).add(idx)
+            desc = _apply_random_scenario(chosen, state)
+            if desc:
+                sat_key = chosen["sat"]
+                if sat_key in state["satellites"]:
+                    state["satellites"][sat_key]["recent_events"].append(f"[RANDOM] {desc}")
+                    if len(state["satellites"][sat_key]["recent_events"]) > 8:
+                        state["satellites"][sat_key]["recent_events"] = state["satellites"][sat_key]["recent_events"][-8:]
+
+    # Generate alerts from current state
+    state["alerts"] = _gen_alerts(state)
 
     return state
 
@@ -478,11 +683,12 @@ def tick(state):
 def alert_summary(state):
     if not state["alerts"]:
         return "None"
-    w = sum(1 for a in state["alerts"] if "WARNING" in a.get("message", "").upper())
-    a = sum(1 for a in state["alerts"] if "ALERT" in a.get("message", "").upper())
+    active = [a for a in state["alerts"] if not a.get("resolved", False)]
+    c = sum(1 for a in active if a["severity"] == "CRITICAL")
+    h = sum(1 for a in active if a["severity"] == "HIGH")
     parts = []
-    if w: parts.append(f"{w}W")
-    if a: parts.append(f"{a}A")
+    if c: parts.append(f"{c}C")
+    if h: parts.append(f"{h}H")
     return "+".join(parts) if parts else "Active"
 
 

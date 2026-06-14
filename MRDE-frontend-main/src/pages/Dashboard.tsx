@@ -1,12 +1,9 @@
 import { motion } from 'framer-motion';
 import Header from '../components/Header';
 import SatelliteSelector from '../components/SatelliteSelector';
-import GlobeView from '../globe/GlobeView';
-import RiskBars from '../components/RiskBars';
-import RecommendationCards from '../components/RecommendationCards';
-import ForecastChart from '../components/ForecastChart';
-import LiveEvents from '../components/LiveEvents';
 import Controls from '../components/Controls';
+import PriorityRisks from '../components/PriorityRisks';
+import RecommendationList from '../components/RecommendationList';
 import { useDashboard } from '../state/DashboardContext';
 
 export default function Dashboard() {
@@ -21,23 +18,23 @@ export default function Dashboard() {
         </div>
       )}
       <SatelliteSelector />
-      <main className="mx-auto max-w-[1440px] space-y-4 p-4">
-        <GlobeView />
+
+      {/* Controls bar */}
+      <div className="border-b border-line bg-bg-secondary/50 px-4 py-2">
+        <Controls />
+      </div>
+
+      <main className="mx-auto max-w-6xl p-6">
         <motion.div
           key={selected}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.35 }}
-          className="space-y-4"
+          transition={{ duration: 0.3 }}
+          className="space-y-6"
         >
-          <div className="grid items-start gap-4 lg:grid-cols-2">
-            <RiskBars />
-            <RecommendationCards />
-          </div>
-          <ForecastChart />
-          <div className="grid items-start gap-4 lg:grid-cols-[1fr_auto]">
-            <LiveEvents />
-            <Controls />
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <PriorityRisks />
+            <RecommendationList />
           </div>
         </motion.div>
       </main>

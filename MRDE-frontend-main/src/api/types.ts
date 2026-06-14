@@ -23,7 +23,7 @@ export interface GlobalState {
   clock_str: string;
   kp_val: number;
   kp_idx: number;
-  alerts: unknown[];
+  alerts: AlertItem[];
   alert_summary: string;
   satellites: SatelliteSummary[];
 }
@@ -105,6 +105,24 @@ export interface SatelliteDashboard {
   movement: Movement;
   recent_events: string[];
   all_summaries: SatelliteSummary[];
+}
+
+export interface AlertItem {
+  id: number;
+  sat_key: string;
+  sat_name: string;
+  type: string;
+  message: string;
+  severity: string;
+  timestamp: string;
+  clock_min: number;
+  resolved: boolean;
+}
+
+export interface AlertsResponse {
+  alerts: AlertItem[];
+  active: AlertItem[];
+  resolved: AlertItem[];
 }
 
 export interface ForecastResponse {

@@ -12,6 +12,7 @@ interface DashboardCtx {
   paused: boolean;
   setPaused: (p: boolean) => void;
   tickOnce: () => Promise<void>;
+  forceTick: () => Promise<void>;
   reset: () => Promise<void>;
   offline: boolean;
 }
@@ -60,6 +61,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh]);
 
+  const forceTick = useCallback(async () => {
+    try {
+      await tick(1);
+      await refresh();
+    } catch {
+      setOffline(true);
+    }
+  }, [refresh]);
+
   const reset = useCallback(async () => {
     generationRef.current++;
     tickingRef.current = true;
@@ -103,7 +113,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider
-      value={{ state, dashboard, forecast, selected, select: setSelected, paused, setPaused, tickOnce, reset, offline }}
+      value={{ state, dashboard, forecast, selected, select: setSelected, paused, setPaused, tickOnce, forceTick, reset, offline }}
     >
       {children}
     </Ctx.Provider>

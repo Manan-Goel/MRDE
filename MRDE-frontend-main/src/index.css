@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-bg-primary: #0a0b0e;
+  --color-bg-secondary: #111318;
+  --color-bg-tertiary: #1a1d24;
+  --color-line: #23262d;
+  --color-txt-primary: #e8eaed;
+  --color-txt-secondary: #9aa0a6;
+}
+
+[data-theme="light"] {
+  --color-bg-primary: #f4f5f7;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #e8eaed;
+  --color-line: #dadce0;
+  --color-txt-primary: #202124;
+  --color-txt-secondary: #5f6368;
+}
+
 html,
 body,
 #root {
@@ -10,10 +28,16 @@ body,
 
 body {
   @apply bg-bg-primary font-sans text-txt-primary antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 input {
-  @apply bg-bg-tertiary text-txt-primary placeholder:text-txt-secondary/60;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-txt-primary);
+}
+input::placeholder {
+  color: var(--color-txt-secondary);
+  opacity: 0.6;
 }
 
 .grid-bg {
@@ -23,6 +47,12 @@ input {
   background-size: 100% 100%, 42px 42px, 42px 42px;
 }
 
+[data-theme="light"] .grid-bg {
+  background-image: radial-gradient(ellipse at 50% -20%, rgba(79, 195, 247, 0.08), transparent 60%),
+    linear-gradient(rgba(218, 220, 224, 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(218, 220, 224, 0.5) 1px, transparent 1px);
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -30,7 +60,11 @@ input {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-::-webkit-scrollbar-thumb {
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
   background: #23262d;
+  border-radius: 3px;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #dadce0;
   border-radius: 3px;
 }

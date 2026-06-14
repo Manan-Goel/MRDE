@@ -91,6 +91,11 @@ def draw_bars(dash):
         lines.append(f"  {name:<20} {bar(val):40s} {val:>6.1f}  {lbl:4s}")
     return "\n".join(lines)
 
+def _trunc(text, max_w):
+    if len(text) <= max_w:
+        return text
+    return text[:max_w-3] + "..."
+
 def draw_recs(dash):
     lines = []
     for rec in dash["recommendations"]:
@@ -98,16 +103,20 @@ def draw_recs(dash):
         comp = rec["component"]
         ts = rec["time_sensitivity"]
         conf = rec["confidence"]
-        hl = rec["headline"]
-        expl = rec["explanation"]
-        action = rec["recommended_action"]
-        lines.append(f"  #{p}  {comp:<22}  [{ts:<10}] [{conf}]")
-        if hl:
-            lines.append(f"       {hl}")
-        if expl:
-            lines.append(f"       {expl}")
+        hl = rec.get("headline", "")
+        action = rec.get("recommended_action", "")
+
+        ts_pad = {"Immediate": "[Imm]", "Soon": "[Soon]", "Monitor": "[Mon]"}.get(ts, f"[{ts}]")
+        conf_pad = f"[{conf}]"
+        prefix = f"  #{p}  {comp:<22}  {ts_pad:>6} {conf_pad:>6}  "
+        avail = W - len(prefix)
+        lines.append(prefix + _trunc(hl, max(20, avail)))
+
         if action:
-            lines.append(f"       >> {action}")
+            indent = "       >> "
+            avail_a = W - len(indent)
+            lines.append(indent + _trunc(action, max(20, avail_a)))
+
         lines.append("")
     return "\n".join(lines) if lines else "  No recommendations."
 
@@ -213,13 +222,13 @@ def main():
     render(state, dash)
 
     try:
-        tick_count = 0
+        recs_cache = dash["recommendations"]
         while True:
             if not paused:
                 state = tick(state)
                 dash = get_dashboard(selected, state)
+                dash["recommendations"] = recs_cache
                 render(state, dash)
-                tick_count += 1
 
             if msvcrt is not None:
                 for _ in range(5):
@@ -233,6 +242,7 @@ def main():
                         elif ch in ("1", "2", "3"):
                             selected = f"sat{ch}"
                             dash = get_dashboard(selected, state)
+                            recs_cache = dash["recommendations"]
                             render(state, dash)
                         elif ch == "\x1b":
                             pass
